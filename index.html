@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+<title>Neon Dash — Endless Runner</title>
+<style>
+  :root{
+    --bg:#0a0f1a;
+    --panel:#0e1730;
+    --accent:#67f3ff;
+    --accent2:#8a6bff;
+    --good:#4afc78;
+    --bad:#ff4d6d;
+    --text:#eaf6ff;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:radial-gradient(1200px 600px at 50% -200px, #14213d 0%, var(--bg) 50%, #060a12 100%); color:var(--text); font-family:system-ui,Segoe UI,Roboto,Inter,Arial,sans-serif}
+  .wrap{
+    max-width: 960px; margin: 0 auto; padding: clamp(8px,2vw,16px);
+  }
+  header{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px}
+  h1{margin:0; font-weight:800; letter-spacing:.5px; font-size: clamp(18px,3.2vw,28px)}
+  .controls{
+    display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  }
+
+  
+  button, .chip{
+    background: linear-gradient(180deg, #1b274d, var(--panel));
+    border:1px solid #2a3b6a; color:var(--text);
+    padding:8px 12px; border-radius:14px; cursor:pointer;
+    transition:.2s transform,.2s box-shadow,.2s background;
+    box-shadow: 0 4px 14px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.04);
+    font-weight:600;
+  }
+  button:hover{transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,.45)}
+  button:active{transform: translateY(0)}
+  .chip{cursor:default}
+  .canvas-card{
+    background: linear-gradient(180deg, rgba(103,243,255,.06), rgba(138,107,255,.06));
+    border:1px solid #263664;
+    border-radius: 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.45);
+    overflow:hidden;
+  }
+  #stage{
+    display:block; width:100%; height:auto; background:
+      radial-gradient(1000px 400px at 50% -150px, rgba(103,243,255,.08), transparent 60%),
+      linear-gradient(180deg, rgba(0,0,0,.0), rgba(0,0,0,.25)),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 1px, transparent 1px 120px);
+  }
+  .hud{
+    position: relative; padding:10px 12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; background: linear-gradient(180deg, rgba(20, 30, 60, .65), rgba(9, 13, 24, .65)); border-top:1px solid rgba(103,243,255,.12)
+  }
+  .stat{display:flex; gap:8px; align-items:center}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .dot.coin{background:var(--good); box-shadow:0 0 10px var(--good)}
+  .dot.hit{background:var(--bad); box-shadow:0 0 10px var(--bad)}
+  .mobile-ctrls{
+    display:none; gap:8px; padding:10px; justify-content:center; background:transparent
+  }
+  .mobile-ctrls button{min-width:100px; font-size:16px}
+  .hint{opacity:.8; font-size:12px}
+  .kbd{
+    padding:2px 6px; border-radius:6px; border:1px solid #334c7a; background:#152145; font-weight:700; font-size:12px
+  }
+  @media (max-width:720px){
+    .mobile-ctrls{display:flex}
+    .desktop-hints{display:none}
+  }
+  footer{opacity:.75; text-align:center; padding:10px; font-size:12px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>⚡ Neon Dash — Endless Runner</h1>
+      <div class="controls">
+        <button id="playBtn" aria-label="Play or Restart">Play</button>
+        <button id="pauseBtn" aria-label="Pause/Resume (P)">Pause</button>
+        <button id="muteBtn" aria-label="Mute/Unmute (M)">Mute</button>
+                <button id="muteBtn" aria-label="Mute/Unmute (M)">Only 10 Jumps</button>
+
+        <span id="bestChip" class="chip" aria-live="polite">🏆 Best: 0</span>
+      </div>
+    </header>
+
+    <div class="canvas-card">
+      <canvas id="stage" width="800" height="450" role="img" aria-label="Game canvas: avoid red obstacles, collect green orbs."></canvas>
+      <div class="hud">
+        <div class="stat"><span class="dot coin"></span><strong>Score:</strong> <span id="score">0</span></div>
+        <div class="stat"><span class="dot hit"></span><strong>Level:</strong> <span id="level">1</span></div>
+        <div class="stat desktop-hints hint">
+          Controls:
+          <span class="kbd">Space</span>/<span class="kbd">↑</span> Jump,
+          <span class="kbd">↓</span> Dash,
+          <span class="kbd">P</span> Pause,
+          <span class="kbd">M</span> Mute
+        </div>
+      </div>
+      <div class="mobile-ctrls" aria-hidden="false">
+        <button id="jumpBtn">Jump</button>
+        <button id="dashBtn">Dash</button>
+      </div>
+    </div>
+
+    <footer>Avoid red obstacles, collect green energy orbs, and survive as long as you can. Power-ups grant brief shields or slow-mo. Good luck!</footer>
+  </div>
+
+<script>
+/* =========================
+   Neon Dash — Endless Runner
+   Single-file game for projects
+   Features:
+   - Responsive hi-DPI canvas
+   - Keyboard + touch controls
+   - Increasing difficulty & levels
+   - Coins, obstacles, power-ups
+   - Particles, screen shake
+   - Pause/Resume, Mute, WebAudio sfx
+   - LocalStorage best score
+========================= */
+
+(function(){
+  // ---------- Helpers ----------
+  const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+  const rand = (a,b) => Math.random()*(b-a)+a;
+  const choice = arr => arr[(Math.random()*arr.length)|0];
+  const lerp = (a,b,t)=>a+(b-a)*t;
+
+  // ---------- Canvas & DPI ----------
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  let W = canvas.width, H = canvas.height, dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  function resize(){
+    const rect = canvas.getBoundingClientRect();
+    dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.width * 0.5625 * dpr); // 16:9
+    W = canvas.width; H = canvas.height;
+  }
+  resize();
+  new ResizeObserver(resize).observe(canvas);
+
+  // ---------- DOM HUD ----------
+  const scoreEl = document.getElementById('score');
+  const levelEl = document.getElementById('level');
+  const bestChip = document.getElementById('bestChip');
+  const playBtn = document.getElementById('playBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const muteBtn = document.getElementById('muteBtn');
+  const jumpBtn = document.getElementById('jumpBtn');
+  const dashBtn = document.getElementById('dashBtn');
+
+  // ---------- Storage ----------
+  const BEST_KEY = 'neondash_best';
+  let best = Number(localStorage.getItem(BEST_KEY) || 0);
+  bestChip.textContent = `🏆 Best: ${best}`;
+
+  // ---------- Audio (WebAudio minimal) ----------
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let audioCtx = null, masterGain = null, muted = false;
+  function initAudio(){
+    if(audioCtx) return;
+    audioCtx = new AudioCtx();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.2;
+    masterGain.connect(audioCtx.destination);
+  }
+  function beep(type='sine', freq=440, dur=0.12, vol=0.35){
+    if(muted) return;
+    initAudio();
+    const t0 = audioCtx.currentTime;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.value = vol;
+    o.connect(g); g.connect(masterGain);
+    o.start(t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.stop(t0 + dur);
+  }
+  const sfx = {
+    jump: ()=>beep('triangle', 420, .12, .25),
+    dash: ()=>beep('sawtooth', 180, .08, .2),
+    coin: ()=>beep('sine', 900, .08, .25),
+    hit: ()=>{beep('square', 120, .18, .35); setTimeout(()=>beep('square', 90, .18, .25), 40)},
+    power: ()=>beep('sine', 600, .2, .25),
+    level: ()=>beep('triangle', 700, .3, .22),
+  };
+
+  // ---------- Game State ----------
+  const state = {
+    running:false, paused:false, time:0, dt:0,
+    score:0, level:1, speed:340,
+    groundY: ()=> H - 80*dpr,
+    camX:0,
+    slowmo:0, shield:0, shake:0,
+  };
+
+  // ---------- Player ----------
+const player = {
+  x: 120, y: 0, w: 40, h: 40,
+  vy: 0, onGround:false, dashT:0, color:'#67f3ff',
+  jumps: 0,            // how many jumps used since last landing
+  maxJumps: 10,         // 2 = double jump, 3 = triple jump
+  reset(){
+    this.x = 120*dpr; 
+    this.y = state.groundY()-this.h*dpr;
+    this.vy = 0; 
+    this.onGround = true; 
+    this.dashT = 0;
+    this.jumps = 0;     // reset jumps at start
+  }
+};
+
+
+  // ---------- Entities ----------
+  const coins = [];
+  const spikes = [];
+  const particles = [];
+  const powerups = [];
+  const PU_TYPES = ['shield','slowmo'];
+
+  function spawnCoin(){
+    const y = state.groundY() - rand(60, 180)*dpr;
+    coins.push({x: W + rand(0, 200*dpr), y, r: 10*dpr, vx: -state.speed});
+  }
+  function spawnSpike(){
+    const h = rand(30, 60)*dpr;
+    spikes.push({x: W + rand(0, 100*dpr), y: state.groundY()-h, w: 18*dpr, h, vx:-state.speed});
+  }
+  function spawnPower(){
+    const t = choice(PU_TYPES);
+    const y = state.groundY() - rand(80, 200)*dpr;
+    powerups.push({x: W + rand(0, 400*dpr), y, r: 14*dpr, vx:-state.speed*0.9, type:t, hue: t==='shield'?170:280});
+  }
+  function emit(x,y,color,count=8,size=2){
+    for(let i=0;i<count;i++){
+      particles.push({x,y, vx: rand(-80,80), vy: rand(-120,0), life: rand(.3,.7), t:0, s:size, color});
+    }
+  }
+
+  // ---------- Controls ----------
+  let keys = {};
+  window.addEventListener('keydown', e=>{
+    if(['ArrowUp','ArrowDown','Space','KeyP','KeyM'].includes(e.code)) e.preventDefault();
+    keys[e.code]=true;
+    if(e.code==='KeyP') togglePause();
+    if(e.code==='KeyM') toggleMute();
+    if((e.code==='Space'||e.code==='ArrowUp') && state.running && !state.paused) doJump();
+    if((e.code==='ArrowDown') && state.running && !state.paused) doDash();
+  });
+  window.addEventListener('keyup', e=>{ keys[e.code]=false });
+
+  // Touch
+  let lastTap=0;
+  canvas.addEventListener('touchstart', e=>{
+    if(!state.running){ startGame(); return; }
+    const now = performance.now();
+    if(now-lastTap < 250){ doDash(); } else { doJump(); }
+    lastTap = now;
+  }, {passive:true});
+  jumpBtn.addEventListener('click', ()=> state.running ? doJump() : startGame());
+  dashBtn.addEventListener('click', ()=> state.running ? doDash() : startGame());
+
+  function doJump(){
+    if(state.paused) return;
+    if(player.onGround){
+      player.vy = -460*dpr;
+      player.onGround=false;
+      sfx.jump();
+      emit(player.x+player.w/2, player.y+player.h, '#67f3ff', 18, 2*dpr);
+    }
+  }
+  function doDash(){
+  if(state.paused) return;
+
+  if (player.onGround){
+    // first jump from ground
+    player.vy = -460*dpr;
+    player.onGround = false;
+    player.jumps = 1;
+  } else if (player.jumps < player.maxJumps){
+    // extra jump(s) while airborne
+    player.vy = -430*dpr; // slightly weaker than ground jump (feel free to tweak)
+    player.jumps++;
+  } else {
+    return; // no jumps left
+  }
+  sfx.jump();
+  emit(player.x+player.w/2, player.y+player.h, '#67f3ff', 18, 2*dpr);
+    }
+  
+  function togglePause(){
+    if(!state.running) return;
+    state.paused = !state.paused;
+    pauseBtn.textContent = state.paused ? 'Resume' : 'Pause';
+    if(!state.paused) lastTime = performance.now(); // fix dt spike
+  }
+  function toggleMute(){
+    muted = !muted;
+    muteBtn.textContent = muted ? 'Unmute' : 'Mute';
+  }
+
+  // ---------- Start / Reset ----------
+  function startGame(){
+    state.running = true; state.paused=false; state.time=0; state.score=0; state.level=1;
+    state.speed = 340; state.camX = 0; state.slowmo=0; state.shield=0; state.shake=0;
+    coins.length = 0; spikes.length = 0; particles.length = 0; powerups.length = 0;
+    player.w = 40*dpr; player.h = 40*dpr; player.reset();
+    // Seed entities
+    for(let i=0;i<6;i++) spawnCoin();
+    for(let i=0;i<4;i++) spawnSpike();
+    playBtn.textContent = 'Restart';
+    pauseBtn.textContent = 'Pause';
+    lastTime = performance.now();
+    sfx.level();
+    loop();
+  }
+
+  playBtn.addEventListener('click', ()=> state.running ? startGame() : startGame());
+  pauseBtn.addEventListener('click', togglePause);
+  muteBtn.addEventListener('click', toggleMute);
+
+  // ---------- Physics & Loop ----------
+  let lastTime = performance.now();
+
+  function update(dt){
+    const slow = state.slowmo>0 ? 0.5 : 1;
+    const k = dt * slow;
+
+    // Level & speed ramp
+    state.speed = lerp(state.speed, 340 + (state.time/10)*22, 0.02);
+    const newLevel = 1 + Math.floor(state.time/12);
+    if(newLevel !== state.level){
+      state.level = newLevel; sfx.level();
+    }
+
+    // Player physics
+    player.vy += 1400*dpr * k;
+    if(player.dashT>0){ // short horizontal push (camera speeds entities, so we add shake)
+      player.dashT -= dt;
+      state.shake = Math.max(state.shake, 6*dpr);
+    }
+    player.y += player.vy * k;
+    if(player.y + player.h >= state.groundY()){
+      player.y = state.groundY()-player.h; player.vy = 0; player.onGround = true;
+    }
+
+    // Spawn pacing
+    if(Math.random()<0.02) spawnCoin();
+    if(Math.random()<0.025 + state.level*0.002) spawnSpike();
+    if(Math.random()<0.006) spawnPower();
+
+    const vx = -state.speed * k * (player.dashT>0 ? 1.2 : 1);
+
+    // Coins
+    for(let i=coins.length-1;i>=0;i--){
+      const c = coins[i];
+      c.x += vx;
+      if(c.x < -40*dpr) coins.splice(i,1);
+      // collide
+      const dx = (player.x+player.w/2) - c.x;
+      const dy = (player.y+player.h/2) - c.y;
+      if(dx*dx + dy*dy < (c.r + Math.min(player.w,player.h)/2)**2){
+        coins.splice(i,1);
+        state.score += 10;
+        sfx.coin();
+        emit(c.x, c.y, '#4afc78', 14, 2*dpr);
+      }
+    }
+
+    // Powerups
+    for(let i=powerups.length-1;i>=0;i--){
+      const p = powerups[i];
+      p.x += vx;
+      if(p.x < -40*dpr) powerups.splice(i,1);
+      const dx = (player.x+player.w/2) - p.x;
+      const dy = (player.y+player.h/2) - p.y;
+      if(dx*dx + dy*dy < (p.r + Math.min(player.w,player.h)/2)**2){
+        if(p.type==='shield') state.shield = 4; else state.slowmo = 3;
+        powerups.splice(i,1);
+        sfx.power();
+        emit(p.x, p.y, p.type==='shield' ? '#4afc78' : '#8a6bff', 22, 2.5*dpr);
+      }
+    }
+
+    // Spikes
+    for(let i=spikes.length-1;i>=0;i--){
+      const s = spikes[i];
+      s.x += vx;
+      if(s.x < -60*dpr) spikes.splice(i,1);
+      // AABB hit
+      if(rectsOverlap(player, s)){
+        if(state.shield>0){
+          // consume shield and destroy spike
+          state.shield = Math.max(0, state.shield - 1.2);
+          spikes.splice(i,1);
+          emit(s.x+s.w/2, s.y, '#4afc78', 20, 2.2*dpr);
+        } else {
+          gameOver();
+          return;
+        }
+      }
+    }
+
+    // Particles
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.t += dt; p.x += p.vx * k; p.y += p.vy * k; p.vy += 900*dpr * k;
+      if(p.t > p.life) particles.splice(i,1);
+    }
+
+    // Timers
+    state.time += dt;
+    if(state.slowmo>0) state.slowmo -= dt;
+    if(state.shield>0) state.shield -= dt*0.5;
+    if(state.shake>0) state.shake = Math.max(0, state.shake - 60*dt);
+
+    // Score
+    state.score += (0.06 + state.level*0.01) * (state.slowmo>0 ? 0.6 : 1);
+    scoreEl.textContent = state.score.toFixed(0);
+    levelEl.textContent = state.level;
+  }
+
+  function rectsOverlap(a,b){
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  // ---------- Draw ----------
+  function draw(){
+    // Camera shake
+    const sx = (Math.random()*2-1) * state.shake;
+    const sy = (Math.random()*2-1) * state.shake;
+    ctx.setTransform(1,0,0,1, sx, sy);
+
+    // Sky gradient
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#0e1224'); g.addColorStop(1, '#090d18');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+
+    // Stars grid parallax
+    ctx.globalAlpha = .25;
+    drawParallaxGrid(0.2, 110*dpr);
+    ctx.globalAlpha = .18;
+    drawParallaxGrid(0.45, 60*dpr);
+    ctx.globalAlpha = 1;
+
+    // Ground
+    ctx.fillStyle = '#0d1329';
+    ctx.fillRect(0, state.groundY(), W, H-state.groundY());
+    // Light scanlines on ground
+    ctx.fillStyle = 'rgba(255,255,255,.05)';
+    for(let x= ((-state.time*120) % 80)*dpr; x<W; x+=80*dpr){
+      ctx.fillRect(x, state.groundY(), 4*dpr, H-state.groundY());
+    }
+
+    // Powerups
+    for(const p of powerups){
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+      const rg = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, p.r);
+      const col = `hsl(${p.hue}, 100%, 60%)`;
+      rg.addColorStop(0, 'white'); rg.addColorStop(1, col);
+      ctx.fillStyle = rg; ctx.fill();
+      ctx.shadowBlur = 30; ctx.shadowColor = col;
+      ctx.strokeStyle = col; ctx.lineWidth = 2*dpr; ctx.stroke();
+      ctx.restore();
+    }
+
+    // Coins
+    for(const c of coins){
+      ctx.save();
+      ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI*2);
+      const rg = ctx.createRadialGradient(c.x, c.y, 2, c.x, c.y, c.r);
+      rg.addColorStop(0,'white'); rg.addColorStop(1,'#4afc78');
+      ctx.fillStyle = rg; ctx.fill();
+      ctx.shadowBlur = 20; ctx.shadowColor = '#4afc78';
+      ctx.restore();
+    }
+
+    // Spikes
+    ctx.fillStyle = '#ff4d6d';
+    for(const s of spikes){
+      // triangle
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y+s.h);
+      ctx.lineTo(s.x+s.w/2, s.y);
+      ctx.lineTo(s.x+s.w, s.y+s.h);
+      ctx.closePath();
+      ctx.fill();
+      // base
+      ctx.fillRect(s.x, s.y+s.h-4*dpr, s.w, 4*dpr);
+      // glow
+      ctx.shadowBlur = 18; ctx.shadowColor = '#ff4d6d';
+      ctx.strokeStyle = 'rgba(255,77,109,.6)'; ctx.lineWidth = 1*dpr; ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // Player
+    ctx.save();
+    const t = state.time;
+    // Pulsing neon
+    const neon = ctx.createLinearGradient(player.x, player.y, player.x, player.y+player.h);
+    neon.addColorStop(0, '#67f3ff'); neon.addColorStop(1, '#8a6bff');
+    ctx.fillStyle = neon;
+    ctx.shadowBlur = 25; ctx.shadowColor = '#67f3ff';
+    const squish = player.onGround ? 1 + Math.sin(t*12)*0.06 : 1;
+    const w = player.w * (player.dashT>0 ? 1.2 : 1) * squish;
+    const h = player.h * (player.onGround ? 1/squish : 1);
+    ctx.fillRect(player.x, player.y, w, h);
+    // Shield ring
+    if(state.shield>0){
+      const r = Math.max(player.w,player.h)*.9;
+      ctx.beginPath(); ctx.arc(player.x+w/2, player.y+h/2, r, 0, Math.PI*2);
+      ctx.strokeStyle = 'rgba(74,252,120,.8)'; ctx.lineWidth = 3*dpr; ctx.stroke();
+    }
+    ctx.restore();
+
+    // Particles
+    for(const p of particles){
+      const a = 1 - (p.t / p.life);
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = a;
+      ctx.fillRect(p.x, p.y, p.s, p.s);
+      ctx.globalAlpha = 1;
+    }
+
+    // Start overlay / Pause overlay
+    if(!state.running){
+      drawOverlay("NEON DASH", "Press Play or Space to Start");
+    } else if(state.paused){
+      drawOverlay("PAUSED", "Press P to Resume");
+    }
+  }
+
+  function drawOverlay(title, subtitle){
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.35)';
+    ctx.fillRect(0,0,W,H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#eaf6ff';
+    ctx.font = `bold ${Math.round(36*dpr)}px Inter, system-ui, sans-serif`;
+    ctx.fillText(title, W/2, H/2 - 20*dpr);
+    ctx.globalAlpha = .8;
+    ctx.font = `${Math.round(18*dpr)}px Inter, system-ui, sans-serif`;
+    ctx.fillText(subtitle, W/2, H/2 + 16*dpr);
+    ctx.restore();
+  }
+
+  function drawParallaxGrid(speed, spacing){
+    const offset = ((state.time*80*speed) % spacing);
+    ctx.beginPath();
+    for(let x = -offset; x < W; x += spacing){
+      for(let y = 0; y < H; y += spacing){
+        ctx.rect(x, y, 2*dpr, 2*dpr);
+      }
+    }
+    ctx.fillStyle = 'rgba(255,255,255,.06)';
+    ctx.fill();
+  }
+
+  // ---------- Game Over ----------
+  function gameOver(){
+    sfx.hit();
+    emit(player.x+player.w/2, player.y+player.h/2, '#ff4d6d', 30, 3*dpr);
+    state.running = false;
+    state.paused = false;
+    if(state.score > best){
+      best = Math.floor(state.score);
+      localStorage.setItem(BEST_KEY, String(best));
+      bestChip.textContent = `🏆 Best: ${best}`;
+    }
+    playBtn.textContent = 'Play';
+    pauseBtn.textContent = 'Pause';
+    // Brief shake
+    state.shake = 24*dpr;
+    setTimeout(()=> state.shake = 0, 250);
+  }
+
+  // ---------- Main Loop ----------
+  // ---------- Main Loop ----------
+  function loop(now){
+    if(!state.running) { 
+      draw(); 
+      return; 
+    }
+    if(state.paused){ 
+      draw(); 
+      requestAnimationFrame(loop); 
+      return; 
+    }
+    requestAnimationFrame(loop);
+
+    if(!now) now = performance.now();
+    let dt = (now - lastTime) / 1000; // seconds
+    lastTime = now;
+    dt = Math.min(dt, 0.033); // clamp delta-time to avoid big jumps
+
+    update(dt);
+    draw();
+  }
+})();
+
+// Jump settings
+let maxJumps = 5;   // Allow single=1, double=2, triple=3
+let jumpCount = 0;
+
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space") {
+    if (jumpCount < maxJumps) {
+      player.vy = -12; // Jump strength
+      jumpCount++;
+    }
+  }
+});
+
+// Reset jump count when touching ground
+function update() {
+  // Apply gravity
+  player.vy += gravity;
+  player.y += player.vy;
+
+  // Floor collision
+  if (player.y + player.height >= canvas.height - 50) {
+    player.y = canvas.height - 50 - player.height;
+    player.vy = 0;
+    jumpCount = 0; // ✅ Reset jumps
+  }
+
+  requestAnimationFrame(update);
+}
+
+
+if (Math.random() < 0.05) { // 5% chance
+    spikes.push({ x: canvas.width, y: ground - 10 });
+}
+
+
+
+
+
+</script>
+
+
+</script>
+</body>
+</html>
